@@ -3,6 +3,7 @@ getData(); setInterval(getData, 120000);
 notifID = -1;
 var alreadySeen = [];
 var notifOnClick = {};
+getMsgCountInt = null;
 chrome.browserAction.setBadgeBackgroundColor({color: "red"});
 
 function getData() {
@@ -22,7 +23,7 @@ function getData() {
         username = response.user.username;
         token = response.user.token;
         getMessageCount();
-        setInterval(getMessageCount, 10000);
+        if(!getMsgCountInt) getMsgCountInt = setInterval(getMessageCount, 10000);
       }
     }
   };
@@ -98,15 +99,15 @@ function newMessage(msg) {
     }
     break;
     case "forumpost":
-    var text = "❤️ There are new posts in the forum thread \"" + htmlCodesToString(msg.topic_title) + "\"";
-    var link = "https://scratch.mit.edu/discuss/topic/${msg.topic_id}/unread/";
+    var text = "📚 There are new posts in the forum thread \"" + htmlCodesToString(msg.topic_title) + "\"";
+    var link = "https://scratch.mit.edu/discuss/topic/" + msg.topic_id + "/unread/";
     break;
     case "loveproject":
     var text = "❤️ " + actor + " loved your project \"" + htmlCodesToString(msg.title) + "\"";
     var link = "https://scratch.mit.edu/users/" + actor;
     break;
     case "favoriteproject":
-    var text = "⭐ " + actor + " favorited your project \"" + htmlCodesToString(msg.title) + "\"";
+    var text = "⭐ " + actor + " favorited your project \"" + htmlCodesToString(msg.project_title) + "\"";
     var link = "https://scratch.mit.edu/users/" + actor;
     break;
     case "followuser":
@@ -139,7 +140,8 @@ function notify(text, link) {
     title: "New Scratch message",
     iconUrl: "/icon.png",
     message: text,
-    buttons: [{title: "Open messages page"}, {title: "Mark messages as read"}]
+    buttons: [{title: "Open messages page"}, {title: "Mark messages as read"}],
+    requireInteraction: true
   });
 }
 
@@ -159,6 +161,7 @@ function markAsRead() {
 }
 
 function htmlCodesToString(input){
+  if(input === undefined) return undefined;
   return input.replace(/&#(\d+);/g, function(match, number){return String.fromCharCode(number);})
 }
 

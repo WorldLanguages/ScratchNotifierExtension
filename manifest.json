@@ -1,0 +1,27 @@
+{
+   "manifest_version":2,
+   "name":"Scratch message notifications [BETA]",
+   "description":"Get Scratch new message notifications with message content.",
+   "version":"0.1",
+  "background": {
+    "scripts": ["background.js"]
+  },
+   "browser_action":{
+      "default_popup":"popup.html",
+      "default_icon":"icon.png"
+   },
+   "icons":{
+      "16":"icon.png",
+      "48":"icon.png",
+      "128":"icon.png"
+   },
+   "permissions":[
+      "https://*.scratch.mit.edu/*",
+      "https://*.scratchnotifier.cf/*",
+      "notifications",
+      "webRequest",
+      "webRequestBlocking",
+      "cookies",
+      "tabs"
+   ]
+}

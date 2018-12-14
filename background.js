@@ -1,10 +1,33 @@
-setInterval(checkMessages, 10000);
+setInterval(getMessageCount, 10000);
 getData(); setInterval(getData, 120000);
 notifID = -1;
+msgNum = Infinity;
+firstRun = true;
 var alreadySeen = [];
 var notifOnClick = {};
 getMsgCountInt = null;
 chrome.browserAction.setBadgeBackgroundColor({color: "red"});
+
+var notifySettings = JSON.parse(localStorage.getItem("notifySettings"));
+if(notifySettings === null) {
+  var notifySettings = {};
+  notifySettings.addcomment = true;
+  notifySettings.forumpost = true;
+  notifySettings.loveproject = true;
+  notifySettings.favoriteproject = true;
+  notifySettings.followuser = true;
+  notifySettings.curatorinvite = true;
+  notifySettings.remixproject = true;
+  localStorage.setItem("notifySettings", JSON.stringify(notifySettings));
+}
+
+chrome.runtime.onMessage.addListener(
+  function(request, sender, sendResponse) {
+    if (request.settings === "update") {
+      notifySettings = JSON.parse(localStorage.getItem("notifySettings"));
+      sendResponse({updated: "true"});
+    }
+});
 
 function getData() {
   // Get API token, username and CSRF token
@@ -17,36 +40,40 @@ function getData() {
       if(tokenrequest.status === 200) {
         var response = JSON.parse(tokenrequest.responseText);
         if(response.user === undefined) { // If user is logged out
+          loggedIn = false;
           chrome.browserAction.setBadgeText({text: ""});
           return;
         }
+        loggedIn = true;
         username = response.user.username;
         token = response.user.token;
-        getMessageCount();
-        if(!getMsgCountInt) getMsgCountInt = setInterval(getMessageCount, 10000);
+        if(firstRun) {getMessageCount(); firstRun = false;}
       }
     }
   };
-
-  chrome.cookies.get({
-    "url": "https://scratch.mit.edu/messages",
-    "name": "scratchcsrftoken"
-  }, function(cookie) {
-    csrftoken = cookie.value;
-  });
 }
 
+chrome.cookies.get({
+  "url": "https://scratch.mit.edu/messages",
+  "name": "scratchcsrftoken"
+}, function(cookie) {
+  csrftoken = cookie.value;
+});
+
 function getMessageCount() {
+  if(!loggedIn) return;
   var getMsgCount = new XMLHttpRequest();
   getMsgCount.open("GET", "https://api.scratch.mit.edu/users/" + username + "/messages/count?avoidcache=" + Math.random(), true);
   getMsgCount.send();
   getMsgCount.onreadystatechange = function(){
     if(getMsgCount.readyState === 4){
       if(getMsgCount.status === 200) {
-        var msgNum = JSON.parse(getMsgCount.responseText).count;
+        var prevMsgNum = msgNum;
+        msgNum = JSON.parse(getMsgCount.responseText).count;
         var msgNumString = String(msgNum);
         if(msgNum === 0) chrome.browserAction.setBadgeText({text: ""});
         else chrome.browserAction.setBadgeText({text: msgNumString});
+        if(prevMsgNum < msgNum) checkMessages();
       }
     }
   };
@@ -80,56 +107,63 @@ function newMessage(msg) {
 
   switch (msg.type) {
     case "addcomment":
+    if(!notifySettings.addcomment) return;
     if(msg.comment_type === 0) { // Comment on own project or reply on someone else's
-      var text = "💬 " + actor + " commented on project \"" + htmlCodesToString(msg.comment_obj_title) + "\":\n" + htmlCodesToString(msg.comment_fragment);
-      var link = "https://scratch.mit.edu/projects/" + msg.comment_obj_id + "/#comments-" + msg.comment_id;
-    }
-    if(msg.comment_type === 1) { // Comment on own profile or reply on another profile
-      if(msg.comment_obj_title === username) {
-        var text = "💬 " + actor + " commented on your profile:\n" + htmlCodesToString(msg.comment_fragment);
-        var link = "https://scratch.mit.edu/users/" + msg.comment_obj_title + "/#comments-" + msg.comment_id;
-      } else {
-        var text = "💬 " + actor + " replied on " + htmlCodesToString(msg.comment_obj_title) + "'s profile:\n" + htmlCodesToString(msg.comment_fragment);
-        var link = "https://scratch.mit.edu/users/" + msg.comment_obj_title + "/#comments-" + msg.comment_id;
-      }
-    }
-    if(msg.comment_type === 2) { // Studio reply
-      var text = "💬 " + actor + " replied on studio \"" + htmlCodesToString(msg.comment_obj_title) + "\":\n" + htmlCodesToString(msg.comment_fragment);
-      var link = "https://scratch.mit.edu/studios/" + msg.comment_obj_id + "/comments/#comments-" + msg.comment_id;
-    }
-    break;
-    case "forumpost":
-    var text = "📚 There are new posts in the forum thread \"" + htmlCodesToString(msg.topic_title) + "\"";
-    var link = "https://scratch.mit.edu/discuss/topic/" + msg.topic_id + "/unread/";
-    break;
-    case "loveproject":
-    var text = "❤️ " + actor + " loved your project \"" + htmlCodesToString(msg.title) + "\"";
-    var link = "https://scratch.mit.edu/users/" + actor;
-    break;
-    case "favoriteproject":
-    var text = "⭐ " + actor + " favorited your project \"" + htmlCodesToString(msg.project_title) + "\"";
-    var link = "https://scratch.mit.edu/users/" + actor;
-    break;
-    case "followuser":
-    var text = "👤➕ " + actor + " is now following you";
-    var link = "https://scratch.mit.edu/users/" + actor;
-    break;
-    case "curatorinvite":
-    var text = "✉️ " + actor + " invited you to curate the studio \"" + htmlCodesToString(msg.title) + "\"";
-    var link = "https://scratch.mit.edu/studios/" + msg.gallery_id + "/curators/"
-    break;
-    case "remixproject":
-    var text = "🔄 " + actor + " remixed your project \"" + htmlCodesToString(msg.parent_title) + "\" as " + htmlCodesToString(msg.title);
-    var link = "https://scratch.mit.edu/projects/" + msg.project_id;
-    break;
-    case "studioactivity":
-    return; // Don't send studio activity
-    break;
-    default:
-    notify("Unknown message content", "https://scratch.mit.edu/messages/")
+    var text = "💬 " + actor + " commented on project \"" + htmlCodesToString(msg.comment_obj_title) + "\":\n" + htmlCodesToString(msg.comment_fragment);
+    var link = "https://scratch.mit.edu/projects/" + msg.comment_obj_id + "/#comments-" + msg.comment_id;
   }
+  if(msg.comment_type === 1) { // Comment on own profile or reply on another profile
+    if(msg.comment_obj_title === username) {
+      var text = "💬 " + actor + " commented on your profile:\n" + htmlCodesToString(msg.comment_fragment);
+      var link = "https://scratch.mit.edu/users/" + msg.comment_obj_title + "/#comments-" + msg.comment_id;
+    } else {
+      var text = "💬 " + actor + " replied on " + htmlCodesToString(msg.comment_obj_title) + "'s profile:\n" + htmlCodesToString(msg.comment_fragment);
+      var link = "https://scratch.mit.edu/users/" + msg.comment_obj_title + "/#comments-" + msg.comment_id;
+    }
+  }
+  if(msg.comment_type === 2) { // Studio reply
+    var text = "💬 " + actor + " replied on studio \"" + htmlCodesToString(msg.comment_obj_title) + "\":\n" + htmlCodesToString(msg.comment_fragment);
+    var link = "https://scratch.mit.edu/studios/" + msg.comment_obj_id + "/comments/#comments-" + msg.comment_id;
+  }
+  break;
+  case "forumpost":
+  if(!notifySettings.forumpost) return;
+  var text = "📚 There are new posts in the forum thread \"" + htmlCodesToString(msg.topic_title) + "\"";
+  var link = "https://scratch.mit.edu/discuss/topic/" + msg.topic_id + "/unread/";
+  break;
+  case "loveproject":
+  if(!notifySettings.loveproject) return;
+  var text = "❤️ " + actor + " loved your project \"" + htmlCodesToString(msg.title) + "\"";
+  var link = "https://scratch.mit.edu/users/" + actor;
+  break;
+  case "favoriteproject":
+  if(!notifySettings.favoriteproject) return;
+  var text = "⭐ " + actor + " favorited your project \"" + htmlCodesToString(msg.project_title) + "\"";
+  var link = "https://scratch.mit.edu/users/" + actor;
+  break;
+  case "followuser":
+  if(!notifySettings.followuser) return;
+  var text = "👤 " + actor + " is now following you";
+  var link = "https://scratch.mit.edu/users/" + actor;
+  break;
+  case "curatorinvite":
+  if(!notifySettings.curatorinvite) return;
+  var text = "✉️ " + actor + " invited you to curate the studio \"" + htmlCodesToString(msg.title) + "\"";
+  var link = "https://scratch.mit.edu/studios/" + msg.gallery_id + "/curators/"
+  break;
+  case "remixproject":
+  if(!notifySettings.remixproject) return;
+  var text = "🔄 " + actor + " remixed your project \"" + htmlCodesToString(msg.parent_title) + "\" as " + htmlCodesToString(msg.title);
+  var link = "https://scratch.mit.edu/projects/" + msg.project_id;
+  break;
+  case "studioactivity":
+  return; // Don't send studio activity
+  break;
+  default:
+  notify("Unknown message content", "https://scratch.mit.edu/messages/")
+}
 
-  notify(text, link);
+notify(text, link);
 }
 
 function notify(text, link) {
@@ -140,13 +174,13 @@ function notify(text, link) {
     title: "New Scratch message",
     iconUrl: "/icon.png",
     message: text,
-    buttons: [{title: "Open messages page"}, {title: "Mark messages as read"}],
+    buttons: [{title: "Open messages page"}, {title: "Mark all as read"}],
     requireInteraction: true
   });
 }
 
 function markAsRead() {
-  markMsgAsRead = new XMLHttpRequest();
+  var markMsgAsRead = new XMLHttpRequest();
   markMsgAsRead.open("POST", "https://scratch.mit.edu/site-api/messages/messages-clear/?scratchnotifierextension=1", true);
   markMsgAsRead.setRequestHeader("X-csrftoken", csrftoken);
   markMsgAsRead.setRequestHeader("X-Requested-With", "XMLHttpRequest");
@@ -154,7 +188,7 @@ function markAsRead() {
   markMsgAsRead.onreadystatechange = function(){
     if(markMsgAsRead.readyState === 4){
       if(markMsgAsRead.status === 200) {
-        console.log("Cleared messages successfully");
+        getMessageCount();
       }
     }
   };
@@ -163,6 +197,12 @@ function markAsRead() {
 function htmlCodesToString(input){
   if(input === undefined) return undefined;
   return input.replace(/&#(\d+);/g, function(match, number){return String.fromCharCode(number);})
+}
+
+function htmlCodesToString(input) {
+  var txt = document.createElement("textarea");
+  txt.innerHTML = input;
+  return txt.value;
 }
 
 function openMessages() {
@@ -190,23 +230,26 @@ chrome.notifications.onButtonClicked.addListener(function(notifID, buttonPressed
 });
 
 chrome.webRequest.onBeforeSendHeaders.addListener(function(details){
-  console.log(details);
-    var newRef = "https://scratch.mit.edu/messages/";
-    var gotRef = false;
-    for(var n in details.requestHeaders){
-        gotRef = details.requestHeaders[n].name.toLowerCase()=="referer";
-        if(gotRef){
-            details.requestHeaders[n].value = newRef;
-            break;
-        }
+  var newRef = "https://scratch.mit.edu/messages/";
+  var gotRef = false;
+  for(var n in details.requestHeaders){
+    gotRef = details.requestHeaders[n].name.toLowerCase()=="referer";
+    if(gotRef){
+      details.requestHeaders[n].value = newRef;
+      break;
     }
-    if(!gotRef){
-        details.requestHeaders.push({name:"Referer",value:newRef});
-    }
-    return {requestHeaders:details.requestHeaders};
+  }
+  if(!gotRef){
+    details.requestHeaders.push({name:"Referer",value:newRef});
+  }
+  return {requestHeaders:details.requestHeaders};
 },{
-    urls:["https://scratch.mit.edu/site-api/messages/messages-clear/?scratchnotifierextension=1"]
+  urls:["https://scratch.mit.edu/site-api/messages/messages-clear/?scratchnotifierextension=1"]
 },[
-    "requestHeaders",
-    "blocking"
+  "requestHeaders",
+  "blocking"
 ]);
+
+chrome.browserAction.onClicked.addListener(function(tab) {
+  openMessages();
+});

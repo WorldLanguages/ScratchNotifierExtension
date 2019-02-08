@@ -2,7 +2,7 @@
   "manifest_version":2,
   "name":"Scratch message notifications",
   "description":"Get Scratch new message notifications with message content.",
-  "version":"1.0",
+  "version":"1.0.1",
   "background": {
     "scripts": ["background.js"]
   },

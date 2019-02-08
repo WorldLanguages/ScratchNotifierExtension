@@ -52,6 +52,7 @@ function getData() {
           });
           return;
         }
+        loggedIn = true;
         username = response.user.username;
         token = response.user.token;
         if (firstRun) {
